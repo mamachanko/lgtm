@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LGTM</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --phosphor: #33ff66;
+    --phosphor-dim: #1a9940;
+    --phosphor-glow: #33ff6633;
+    --bg: #0a0a0a;
+    --line-hover: #33ff6612;
+    --line-selected: #33ff6622;
+    --red: #ff4444;
+    --red-dim: #992222;
+  }
+
+  body {
+    background: #000;
+    color: var(--phosphor);
+    font-family: 'JetBrains Mono', monospace;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #crt {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  /* scanlines */
+  #crt::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.15) 2px,
+      rgba(0, 0, 0, 0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* vignette */
+  #crt::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%);
+    pointer-events: none;
+    z-index: 101;
+  }
+
+  /* drifting horizontal line */
+  #scanline-drift {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: var(--phosphor-glow);
+    z-index: 99;
+    animation: drift 8s linear infinite;
+    opacity: 0.4;
+  }
+
+  @keyframes drift {
+    0% { top: -2px; }
+    100% { top: 100vh; }
+  }
+
+  /* text glow */
+  #crt {
+    text-shadow: 0 0 4px var(--phosphor-glow);
+  }
+
+  /* flicker */
+  @keyframes flicker {
+    0%, 97%, 100% { opacity: 1; }
+    98% { opacity: 0.95; }
+    99% { opacity: 0.98; }
+  }
+
+  #game-container {
+    position: relative;
+    z-index: 10;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 40px;
+    animation: flicker 4s infinite;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  /* --- HEADER --- */
+  #header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--phosphor-dim);
+    flex-shrink: 0;
+  }
+
+  #header .title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--phosphor);
+    letter-spacing: 4px;
+  }
+
+  #streak-display {
+    font-size: 13px;
+  }
+
+  /* --- SCREENS --- */
+  .screen {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .screen.active {
+    display: flex;
+  }
+
+  /* --- START SCREEN --- */
+  #start-screen {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+
+  #start-screen .logo {
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: 12px;
+    margin-bottom: 32px;
+  }
+
+  #start-screen .tagline {
+    font-size: 14px;
+    color: var(--phosphor-dim);
+    margin-bottom: 48px;
+    line-height: 1.8;
+  }
+
+  #start-screen .prompt {
+    font-size: 13px;
+    animation: blink 1.2s step-end infinite;
+    cursor: pointer;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* --- CODE REVIEW SCREEN --- */
+  #review-screen {
+    gap: 16px;
+  }
+
+  #puzzle-context {
+    font-size: 12px;
+    color: var(--phosphor-dim);
+    padding: 8px 0;
+    border-bottom: 1px solid #1a1a1a;
+    flex-shrink: 0;
+    line-height: 1.6;
+  }
+
+  #puzzle-context .file-path {
+    color: var(--phosphor);
+  }
+
+  #code-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--phosphor-dim) transparent;
+  }
+
+  .code-line {
+    display: flex;
+    padding: 2px 8px;
+    font-size: 13px;
+    line-height: 1.7;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+    white-space: pre;
+  }
+
+  .code-line:hover {
+    background: var(--line-hover);
+  }
+
+  .code-line.selected {
+    background: var(--line-selected);
+    border-left-color: var(--phosphor);
+  }
+
+  .code-line.correct {
+    background: #33ff6622;
+    border-left-color: var(--phosphor);
+  }
+
+  .code-line.incorrect {
+    background: #ff444422;
+    border-left-color: var(--red);
+  }
+
+  .code-line.reveal-correct {
+    background: #33ff6615;
+    border-left-color: var(--phosphor-dim);
+  }
+
+  .line-number {
+    color: #333;
+    min-width: 32px;
+    text-align: right;
+    margin-right: 16px;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .line-content {
+    flex: 1;
+  }
+
+  #instruction {
+    font-size: 12px;
+    color: var(--phosphor-dim);
+    padding: 8px 0;
+    flex-shrink: 0;
+  }
+
+  /* --- CHOICES --- */
+  #choices-container {
+    flex-shrink: 0;
+    padding: 12px 0;
+    border-top: 1px solid #1a1a1a;
+  }
+
+  #choices-container.hidden {
+    display: none;
+  }
+
+  #choices-label {
+    font-size: 12px;
+    color: var(--phosphor-dim);
+    margin-bottom: 8px;
+  }
+
+  .choice-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid #222;
+    color: var(--phosphor);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .choice-btn:hover {
+    border-color: var(--phosphor-dim);
+    background: var(--line-hover);
+  }
+
+  .choice-btn.correct-choice {
+    border-color: var(--phosphor);
+    background: #33ff6622;
+  }
+
+  .choice-btn.wrong-choice {
+    border-color: var(--red);
+    background: #ff444412;
+    color: var(--red);
+  }
+
+  .choice-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  .choice-btn:disabled:hover {
+    background: transparent;
+    border-color: #222;
+  }
+
+  .choice-btn.correct-choice:disabled,
+  .choice-btn.wrong-choice:disabled {
+    opacity: 1;
+  }
+
+  /* --- RESULT --- */
+  #result-bar {
+    font-size: 13px;
+    padding: 12px 0;
+    flex-shrink: 0;
+    min-height: 40px;
+  }
+
+  #result-bar .correct-msg { color: var(--phosphor); }
+  #result-bar .wrong-msg { color: var(--red); }
+
+  /* --- TRANSITION SCREEN --- */
+  #transition-screen {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+
+  #transition-text {
+    font-size: 14px;
+    color: var(--phosphor-dim);
+    line-height: 2;
+  }
+
+  #transition-text .highlight {
+    color: var(--phosphor);
+  }
+
+  #continue-prompt {
+    margin-top: 48px;
+    font-size: 12px;
+    color: var(--phosphor-dim);
+    animation: blink 1.2s step-end infinite;
+    cursor: pointer;
+  }
+
+  /* --- END SCREEN --- */
+  #end-screen {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+
+  #end-screen .final-score {
+    font-size: 24px;
+    margin-bottom: 16px;
+  }
+
+  #end-screen .final-message {
+    font-size: 14px;
+    color: var(--phosphor-dim);
+    line-height: 1.8;
+    max-width: 500px;
+    margin-bottom: 48px;
+  }
+
+  #end-screen .restart-prompt {
+    font-size: 12px;
+    animation: blink 1.2s step-end infinite;
+    cursor: pointer;
+  }
+
+  /* --- COLOR MODE (power-up) --- */
+  .color-mode #crt {
+    --phosphor: #d4d4d4;
+    --phosphor-dim: #888;
+    --phosphor-glow: transparent;
+    --bg: #1e1e1e;
+    text-shadow: none;
+  }
+
+  .color-mode #crt::before,
+  .color-mode #crt::after {
+    display: none;
+  }
+
+  .color-mode #scanline-drift {
+    display: none;
+  }
+
+  .color-mode .kw { color: #569cd6; }
+  .color-mode .str { color: #ce9178; }
+  .color-mode .num { color: #b5cea8; }
+  .color-mode .cmt { color: #6a9955; }
+  .color-mode .fn { color: #dcdcaa; }
+  .color-mode .type { color: #4ec9b0; }
+  .color-mode .op { color: #d4d4d4; }
+</style>
+</head>
+<body>
+<div id="crt">
+  <div id="scanline-drift"></div>
+  <div id="game-container">
+    <div id="header">
+      <span class="title">LGTM</span>
+      <span id="streak-display"></span>
+    </div>
+
+    <!-- START -->
+    <div id="start-screen" class="screen active">
+      <div class="logo">LGTM</div>
+      <div class="tagline">
+        a game about staring at code<br>
+        and knowing something is wrong.
+      </div>
+      <div class="prompt" id="start-btn">[ press any key ]</div>
+    </div>
+
+    <!-- CODE REVIEW -->
+    <div id="review-screen" class="screen">
+      <div id="puzzle-context"></div>
+      <div id="code-container"></div>
+      <div id="instruction">click the line with the bug.</div>
+      <div id="choices-container" class="hidden">
+        <div id="choices-label">what's wrong here?</div>
+        <div id="choices-list"></div>
+      </div>
+      <div id="result-bar"></div>
+    </div>
+
+    <!-- TRANSITION -->
+    <div id="transition-screen" class="screen">
+      <div id="transition-text"></div>
+      <div id="continue-prompt">[ press any key ]</div>
+    </div>
+
+    <!-- END -->
+    <div id="end-screen" class="screen">
+      <div class="final-score" id="final-score"></div>
+      <div class="final-message" id="final-message"></div>
+      <div class="restart-prompt" id="restart-btn">[ again ]</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// PUZZLES
+// ============================================================
+const PUZZLES = [
+  {
+    context: {
+      file: "src/auth/session.js",
+      ticket: 'ticket #2041 — "users getting logged out randomly" — priority: high'
+    },
+    lines: [
+      "function isSessionValid(session) {",
+      "  if (!session || !session.token) {",
+      "    return false;",
+      "  }",
+      "",
+      "  const now = Date.now();",
+      "  const expiry = session.expiresAt;",
+      "",
+      "  return now < expiry;",
+      "  return session.revoked !== true;",
+      "}"
+    ],
+    bugLine: 9,  // 0-indexed: "return session.revoked !== true;" is unreachable
+    choices: [
+      { text: "unreachable code — second return never executes", correct: true },
+      { text: "Date.now() returns seconds, not milliseconds", correct: false },
+      { text: "strict equality should be loose equality", correct: false },
+      { text: "missing null check on expiresAt", correct: false }
+    ],
+    correctQuip: "the revoked check never runs. the bug ships. users stay logged in forever.",
+    wrongQuip: "the second return is dead code. revoked sessions live on. the pager doesn't care."
+  },
+  {
+    context: {
+      file: "api/handlers/users.py",
+      ticket: 'PR #887 — "quick fix for user search" — description: (empty)'
+    },
+    lines: [
+      "def search_users(query, db):",
+      '    sql = f"SELECT * FROM users WHERE name LIKE \'%{query}%\'"',
+      "    results = db.execute(sql)",
+      "    return [User.from_row(r) for r in results]"
+    ],
+    bugLine: 1,  // SQL injection via f-string
+    choices: [
+      { text: "SQL injection — user input interpolated directly into query", correct: true },
+      { text: "missing LIMIT clause could return too many rows", correct: false },
+      { text: "LIKE operator should be ILIKE for case-insensitive search", correct: false },
+      { text: "from_row should be from_dict", correct: false }
+    ],
+    correctQuip: "bobby tables sends his regards.",
+    wrongQuip: "f-string + SQL = the oldest sin in the book. the query is wide open."
+  },
+  {
+    context: {
+      file: "lib/utils/array.go",
+      ticket: 'commit message: "optimize array dedup"'
+    },
+    lines: [
+      "func removeDuplicates(items []string) []string {",
+      "    seen := make(map[string]bool)",
+      "    result := []string{}",
+      "",
+      "    for i := 0; i <= len(items); i++ {",
+      "        if !seen[items[i]] {",
+      "            seen[items[i]] = true",
+      "            result = append(result, items[i])",
+      "        }",
+      "    }",
+      "",
+      "    return result",
+      "}"
+    ],
+    bugLine: 4,  // off-by-one: <= should be <
+    choices: [
+      { text: "off-by-one — <= causes index out of bounds on last iteration", correct: true },
+      { text: "map lookup returns zero value, should check with comma-ok idiom", correct: false },
+      { text: "append should be replaced with direct index assignment", correct: false },
+      { text: "result slice should be pre-allocated with make()", correct: false }
+    ],
+    correctQuip: "the classic. <= instead of <. the program panics. the postmortem says 'edge case.'",
+    wrongQuip: "i <= len(items) walks one step past the end. panic: index out of range. tale as old as time."
+  },
+  {
+    context: {
+      file: "src/components/Dashboard.tsx",
+      ticket: 'slack: "hey the dashboard is flickering like crazy can someone look at this"'
+    },
+    lines: [
+      "function Dashboard({ userId }: Props) {",
+      "  const [data, setData] = useState<DashData | null>(null);",
+      "",
+      "  useEffect(() => {",
+      "    fetch(`/api/dashboard/${userId}`)",
+      "      .then(res => res.json())",
+      "      .then(json => setData(json));",
+      "  });",
+      "",
+      "  if (!data) return <Spinner />;",
+      "",
+      "  return <DashboardView data={data} />;",
+      "}"
+    ],
+    bugLine: 7,  // useEffect with no dependency array = infinite loop
+    choices: [
+      { text: "missing dependency array — useEffect runs every render, infinite loop", correct: true },
+      { text: "fetch should use async/await instead of .then()", correct: false },
+      { text: "missing error handling on the fetch call", correct: false },
+      { text: "useState type should be undefined, not null", correct: false }
+    ],
+    correctQuip: "no deps array. fetch triggers render. render triggers fetch. the circle of life.",
+    wrongQuip: "useEffect() with no second argument runs on every render. fetch → setState → render → fetch → ∞"
+  },
+  {
+    context: {
+      file: "services/billing/charge.java",
+      ticket: 'incident #39 — "customer charged $100 instead of $1.00" — severity: SEV-1'
+    },
+    lines: [
+      "public void chargeCustomer(String customerId, double amount) {",
+      "    int cents = (int) amount * 100;",
+      "    PaymentRequest req = new PaymentRequest.Builder()",
+      "        .setCustomerId(customerId)",
+      "        .setAmount(cents)",
+      "        .setCurrency(\"USD\")",
+      "        .build();",
+      "",
+      "    gateway.process(req);",
+      "}"
+    ],
+    bugLine: 1,  // (int) amount * 100 casts first then multiplies
+    choices: [
+      { text: "operator precedence — cast truncates before multiply, losing decimals", correct: true },
+      { text: "double should be BigDecimal for currency calculations", correct: false },
+      { text: "missing null check on customerId", correct: false },
+      { text: "setCurrency should use an enum, not a string", correct: false }
+    ],
+    correctQuip: "(int) binds tighter than *. $1.50 becomes $100. the customer notices.",
+    wrongQuip: "cast happens first. (int)1.50 is 1. 1 * 100 is 100. one dollar fifty becomes one hundred dollars. SEV-1."
+  },
+  {
+    context: {
+      file: "deploy/config.sh",
+      ticket: 'PR #1204 — "cleanup old deploy artifacts" — approved by: the intern'
+    },
+    lines: [
+      "#!/bin/bash",
+      "",
+      "DEPLOY_DIR=$1",
+      "",
+      'echo "Cleaning up old artifacts in $DEPLOY_DIR"',
+      "",
+      'rm -rf $DEPLOY_DIR/*',
+      "",
+      'echo "Deploying new build..."',
+      'cp -r ./build/* $DEPLOY_DIR/',
+      'echo "Done."'
+    ],
+    bugLine: 6,  // unquoted variable in rm -rf — if DEPLOY_DIR is empty, this is rm -rf /*
+    choices: [
+      { text: "unquoted variable — if $DEPLOY_DIR is empty, this runs rm -rf /*", correct: true },
+      { text: "should use /bin/rm instead of rm for security", correct: false },
+      { text: "echo statements should use printf instead", correct: false },
+      { text: "cp -r should be cp -a to preserve permissions", correct: false }
+    ],
+    correctQuip: "no quotes. empty variable. rm -rf /*. the intern approved it. the servers are gone.",
+    wrongQuip: "$DEPLOY_DIR is unquoted. if it's empty or unset: rm -rf /*. everything is gone. everything."
+  },
+  {
+    context: {
+      file: "src/crypto/hash.js",
+      ticket: 'ticket #771 — "password comparison timing attack" — priority: medium (lol)'
+    },
+    lines: [
+      "function verifyPassword(input, stored) {",
+      "  const inputHash = sha256(input);",
+      "",
+      "  if (inputHash.length !== stored.length) {",
+      "    return false;",
+      "  }",
+      "",
+      "  return inputHash === stored;",
+      "}"
+    ],
+    bugLine: 7,  // === is not constant-time comparison
+    choices: [
+      { text: "timing attack — string === short-circuits, leaking hash info via response time", correct: true },
+      { text: "sha256 should be bcrypt for password hashing", correct: false },
+      { text: "missing salt parameter in hash function", correct: false },
+      { text: "length check is redundant since hashes are fixed-length", correct: false }
+    ],
+    correctQuip: "=== bails on first mismatch. an attacker with a stopwatch can brute-force this byte by byte.",
+    wrongQuip: "string comparison short-circuits. timing differences reveal the hash character by character. use constant-time comparison."
+  },
+  {
+    context: {
+      file: "pkg/cache/lru.rb",
+      ticket: 'commit message: "."'
+    },
+    lines: [
+      "class LRUCache",
+      "  def initialize(capacity)",
+      "    @capacity = capacity",
+      "    @cache = {}",
+      "  end",
+      "",
+      "  def get(key)",
+      "    return nil unless @cache.key?(key)",
+      "    value = @cache.delete(key)",
+      "    @cache[key] = value",
+      "    value",
+      "  end",
+      "",
+      "  def put(key, value)",
+      "    @cache.delete(key) if @cache.key?(key)",
+      "    @cache[key] = value",
+      "    @cache.delete(@cache.first[0]) if @cache.size >= @capacity",
+      "  end",
+      "end"
+    ],
+    bugLine: 16,  // eviction after insert means cache can exceed capacity by 1
+    choices: [
+      { text: "eviction happens after insert — cache exceeds capacity before oldest is removed", correct: true },
+      { text: "@cache.first is not guaranteed to be the oldest in Ruby hashes", correct: false },
+      { text: "delete in get() breaks the hash iteration order", correct: false },
+      { text: "should use >= instead of > for capacity check", correct: false }
+    ],
+    correctQuip: "insert then evict. for one beautiful moment, the cache holds capacity + 1 items. the commit message was just a period.",
+    wrongQuip: "the eviction runs after the insert. the cache briefly exceeds capacity. should evict first, then insert."
+  }
+];
+
+// ============================================================
+// FLAVOR TEXT
+// ============================================================
+const TRANSITIONS = [
+  { text: '> npm install hope\n> <span class="highlight">not found</span>' },
+  { text: '> git blame\n> <span class="highlight">it was you. it was always you.</span>' },
+  { text: '> deploying to staging...\n> <span class="highlight">jk, that\'s prod.</span>' },
+  { text: '> running tests... <span class="highlight">0 found.</span>' },
+  { text: '> PR description: <span class="highlight">(empty)</span>\n> reviewer comment from 3 weeks ago: "nit"' },
+  { text: '> incident postmortem:\n> root cause: <span class="highlight">human error</span>\n> action items: be more careful next time' },
+  { text: '> JIRA ticket #4091\n> "login is broken idk"\n> priority: <span class="highlight">CRITICAL</span>\n> assignee: you, apparently' },
+  { text: '> commit message:\n> <span class="highlight">"refactored some stuff, tests pass locally"</span>' },
+  { text: '> pipeline status: <span class="highlight">flaky</span>\n> last green build: 3 days ago\n> action taken: re-run and pray' },
+  { text: '> slack message from PM:\n> <span class="highlight">"hey quick question"</span>\n> [typing...]' },
+  { text: '> code coverage: <span class="highlight">100%</span>\n> bugs in production: <span class="highlight">47</span>' },
+  { text: '> sprint velocity: <span class="highlight">∞</span>\n> sprint scope: also <span class="highlight">∞</span>\n> time remaining: -2 days' },
+  { text: '> dependency update available\n> <span class="highlight">breaking changes: yes</span>\n> changelog: "misc improvements"' },
+];
+
+const CORRECT_QUIPS_GENERIC = [
+  "you caught it. the build survives another day.",
+  "sharp eyes. ship it.",
+  "correct. somewhere, a SRE just slept through the night because of you.",
+  "nailed it. your code review instincts are unfortunately well-calibrated.",
+  "right. the bug dies in review. as it should.",
+];
+
+const WRONG_QUIPS_GENERIC = [
+  "the bug ships. the pager goes off at 3am. the cycle continues.",
+  "that one slipped through. it happens. it always happens.",
+  "wrong line. the real bug was hiding in plain sight. like they do.",
+  "missed it. the PR gets merged. the incident channel lights up.",
+];
+
+const END_MESSAGES_GOOD = [
+  "you have mass-closed exactly zero bugs today.\nyou've stared at every one of them.\nthat's the difference.",
+  "your review queue is empty.\nfor now.\nit's always for now.",
+  "not bad. you might actually be good at this.\ndon't tell your manager — they'll add it to your OKRs."
+];
+
+const END_MESSAGES_OK = [
+  "some got through. that's the job.\nthe job is knowing they'll get through\nand showing up anyway.",
+  "mixed results. like every sprint retrospective\nyou've ever sat through.",
+  "you caught some. you missed some.\njust like real code review.\njust like everything."
+];
+
+const END_MESSAGES_BAD = [
+  "the deploy pipeline doesn't care about your feelings.\nbut we do. slightly.",
+  "rough session. it happens.\ntomorrow there will be more PRs.\nthere are always more PRs.",
+  "don't worry about it.\nthe tests didn't catch these either."
+];
+
+// ============================================================
+// GAME STATE
+// ============================================================
+let state = {
+  currentPuzzle: 0,
+  streak: 0,
+  bestStreak: 0,
+  correct: 0,
+  total: 0,
+  phase: 'start', // start, review-select-line, review-select-choice, result, transition, end
+  selectedLine: null,
+  puzzleOrder: [],
+};
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// ============================================================
+// DOM
+// ============================================================
+const $ = (sel) => document.querySelector(sel);
+const screens = {
+  start: $('#start-screen'),
+  review: $('#review-screen'),
+  transition: $('#transition-screen'),
+  end: $('#end-screen'),
+};
+
+function showScreen(name) {
+  Object.values(screens).forEach(s => s.classList.remove('active'));
+  screens[name].classList.add('active');
+}
+
+function updateStreak() {
+  const el = $('#streak-display');
+  if (state.total === 0) {
+    el.textContent = '';
+  } else {
+    el.textContent = `streak: ${state.streak} | ${state.correct}/${state.total}`;
+  }
+}
+
+// ============================================================
+// GAME FLOW
+// ============================================================
+function startGame() {
+  state.currentPuzzle = 0;
+  state.streak = 0;
+  state.bestStreak = 0;
+  state.correct = 0;
+  state.total = 0;
+  state.puzzleOrder = shuffle([...Array(PUZZLES.length).keys()]);
+  state.phase = 'review-select-line';
+  updateStreak();
+  loadPuzzle();
+}
+
+function loadPuzzle() {
+  const idx = state.puzzleOrder[state.currentPuzzle];
+  const puzzle = PUZZLES[idx];
+
+  // context
+  const ctx = $('#puzzle-context');
+  ctx.innerHTML = `<span class="file-path">${puzzle.context.file}</span><br>${puzzle.context.ticket}`;
+
+  // code
+  const container = $('#code-container');
+  container.innerHTML = '';
+  puzzle.lines.forEach((line, i) => {
+    const el = document.createElement('div');
+    el.className = 'code-line';
+    el.dataset.line = i;
+    el.innerHTML = `<span class="line-number">${i + 1}</span><span class="line-content">${escapeHtml(line)}</span>`;
+    el.addEventListener('click', () => selectLine(i));
+    container.appendChild(el);
+  });
+
+  // reset
+  $('#instruction').textContent = 'click the line with the bug.';
+  $('#choices-container').classList.add('hidden');
+  $('#result-bar').innerHTML = '';
+  state.selectedLine = null;
+  state.phase = 'review-select-line';
+
+  showScreen('review');
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function selectLine(lineIndex) {
+  if (state.phase !== 'review-select-line') return;
+
+  // deselect previous
+  document.querySelectorAll('.code-line.selected').forEach(el => el.classList.remove('selected'));
+
+  // select new
+  const lineEl = document.querySelector(`.code-line[data-line="${lineIndex}"]`);
+  lineEl.classList.add('selected');
+  state.selectedLine = lineIndex;
+
+  // show choices
+  showChoices();
+}
+
+function showChoices() {
+  const idx = state.puzzleOrder[state.currentPuzzle];
+  const puzzle = PUZZLES[idx];
+
+  const container = $('#choices-container');
+  const list = $('#choices-list');
+  list.innerHTML = '';
+
+  const shuffledChoices = shuffle(puzzle.choices.map((c, i) => ({ ...c, originalIndex: i })));
+
+  shuffledChoices.forEach((choice) => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = choice.text;
+    btn.addEventListener('click', () => submitAnswer(choice.correct));
+    list.appendChild(btn);
+  });
+
+  container.classList.remove('hidden');
+  $('#instruction').textContent = 'you picked a line. now tell me what\'s wrong.';
+  state.phase = 'review-select-choice';
+}
+
+function submitAnswer(choiceCorrect) {
+  if (state.phase !== 'review-select-choice') return;
+  state.phase = 'result';
+
+  const idx = state.puzzleOrder[state.currentPuzzle];
+  const puzzle = PUZZLES[idx];
+  const lineCorrect = state.selectedLine === puzzle.bugLine;
+  const fullyCorrect = lineCorrect && choiceCorrect;
+
+  state.total++;
+
+  // highlight lines
+  document.querySelectorAll('.code-line.selected').forEach(el => {
+    el.classList.remove('selected');
+    el.classList.add(lineCorrect ? 'correct' : 'incorrect');
+  });
+
+  if (!lineCorrect) {
+    const correctLine = document.querySelector(`.code-line[data-line="${puzzle.bugLine}"]`);
+    if (correctLine) correctLine.classList.add('reveal-correct');
+  }
+
+  // highlight choice buttons
+  document.querySelectorAll('.choice-btn').forEach(btn => {
+    btn.disabled = true;
+    // find the matching choice
+    const choice = puzzle.choices.find(c => c.text === btn.textContent);
+    if (choice && choice.correct) {
+      btn.classList.add('correct-choice');
+    } else if (btn.textContent === document.querySelector('.choice-btn:not(:disabled)')?.textContent) {
+      // already disabled, skip
+    }
+  });
+
+  // mark the clicked wrong choice
+  if (!choiceCorrect) {
+    const clickedBtn = [...document.querySelectorAll('.choice-btn')].find(btn => {
+      const choice = puzzle.choices.find(c => c.text === btn.textContent);
+      return choice && !choice.correct && btn === document.activeElement;
+    });
+  }
+
+  // update streak
+  if (fullyCorrect) {
+    state.streak++;
+    state.correct++;
+    if (state.streak > state.bestStreak) state.bestStreak = state.streak;
+  } else {
+    state.streak = 0;
+  }
+  updateStreak();
+
+  // show result
+  const resultBar = $('#result-bar');
+  if (fullyCorrect) {
+    const quip = puzzle.correctQuip || pick(CORRECT_QUIPS_GENERIC);
+    resultBar.innerHTML = `<span class="correct-msg">${quip}</span>`;
+  } else {
+    let msg = '';
+    if (!lineCorrect) {
+      msg = puzzle.wrongQuip || pick(WRONG_QUIPS_GENERIC);
+    } else {
+      msg = "right line, wrong diagnosis. close only counts in horseshoes and yaml merges.";
+    }
+    resultBar.innerHTML = `<span class="wrong-msg">${msg}</span>`;
+  }
+
+  $('#instruction').textContent = '[ press any key to continue ]';
+  $('#instruction').style.animation = 'blink 1.2s step-end infinite';
+}
+
+function nextPuzzle() {
+  $('#instruction').style.animation = '';
+  state.currentPuzzle++;
+
+  if (state.currentPuzzle >= state.puzzleOrder.length) {
+    showEnd();
+    return;
+  }
+
+  showTransition();
+}
+
+function showTransition() {
+  const t = pick(TRANSITIONS);
+  $('#transition-text').innerHTML = t.text;
+  state.phase = 'transition';
+  showScreen('transition');
+}
+
+function showEnd() {
+  state.phase = 'end';
+  const pct = state.total > 0 ? state.correct / state.total : 0;
+
+  $('#final-score').textContent = `${state.correct} / ${state.total}`;
+
+  let msg;
+  if (pct >= 0.75) msg = pick(END_MESSAGES_GOOD);
+  else if (pct >= 0.4) msg = pick(END_MESSAGES_OK);
+  else msg = pick(END_MESSAGES_BAD);
+
+  if (state.bestStreak > 1) {
+    msg += `\n\nbest streak: ${state.bestStreak}`;
+  }
+
+  $('#final-message').textContent = msg;
+  showScreen('end');
+}
+
+// ============================================================
+// INPUT HANDLING
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' || e.key === 'Alt' || e.key === 'Control' || e.key === 'Shift' || e.key === 'Meta') return;
+
+  switch (state.phase) {
+    case 'start':
+      startGame();
+      break;
+    case 'result':
+      nextPuzzle();
+      break;
+    case 'transition':
+      loadPuzzle();
+      break;
+    case 'end':
+      startGame();
+      break;
+  }
+});
+
+// click handlers for prompts
+$('#start-btn').addEventListener('click', startGame);
+$('#continue-prompt').addEventListener('click', loadPuzzle);
+$('#restart-btn').addEventListener('click', startGame);
+
+// init
+state.phase = 'start';
+</script>
+</body>
+</html>
